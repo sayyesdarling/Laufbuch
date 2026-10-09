@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached on install; fonts are cached the first time they load.
 // Bump VERSION whenever any file changes so phones pick up the new version.
-const VERSION = "laufbuch-v1.0.1";
-const FONT_CACHE = "laufbuch-fonts";
+const VERSION = "krok-v2.0.0";
+const FONT_CACHE = "krok-fonts";
 const SHELL = [
   "./",
   "./index.html",
@@ -12,9 +12,13 @@ const SHELL = [
   "./guide.js",
   "./importers.js",
   "./fit.js",
+  "./streams.js",
+  "./analysis.js",
+  "./charts.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
+  "./icon-maskable-512.png",
   "./apple-touch-icon.png"
 ];
 

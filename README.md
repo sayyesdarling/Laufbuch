@@ -1,54 +1,50 @@
-# Laufbuch
+# Krok
 
-A small offline web app for your iPhone: the training plan, a run log, imports from Strava and COROS, and a guide to the different kinds of sessions.
+*крок* — Ukrainian for "step". A small offline web app for the iPhone: training plan, run log, analysis of your runs, and a guide to the different kinds of sessions.
 
-Everything you log is stored on the phone itself. Nothing is sent anywhere.
+Everything is stored on the phone. Nothing is sent anywhere.
 
-## Put it online (GitHub Pages, about 10 minutes, on your Mac)
+## Install on the iPhone
 
-1. Unzip `laufbuch.zip`. You get a folder called `laufbuch` with all the app's files side by side (no subfolders).
-2. On github.com, click **+** (top right) → **New repository**.
-   - Name: `laufbuch`
-   - Visibility: **Public** (free GitHub Pages needs a public repository; only the app's code and the default plan are visible, never your log).
-   - Leave everything else unticked and click **Create repository**.
-3. On the new repository's page, click **uploading an existing file**.
-4. Open the unzipped `laufbuch` folder in Finder, select **all the files inside it** and drag them onto the upload area.
-5. Click **Commit changes**.
-6. Go to **Settings** → **Pages**. Under *Build and deployment*, set **Source** to *Deploy from a branch*, branch **main**, folder **/ (root)**, and click **Save**.
-7. After a minute or two the page shows your address, for example `https://YOUR-USERNAME.github.io/laufbuch/`.
+1. Open `https://sayyesdarling.github.io/Laufbuch/` in **Safari**.
+2. Tap **Share** → **Add to Home Screen** → **Add**.
+3. Open Krok from the Home Screen icon from now on. Opened that way it runs full-screen, works offline, and its storage is kept.
 
-## Install it on the iPhone
+If you added an earlier version, delete that icon and add it again to get the new name and icon.
 
-1. Open that address in **Safari** (it has to be Safari).
-2. Tap the **Share** button, then **Add to Home Screen**, then **Add**.
-3. Open Laufbuch from the Home Screen icon from now on. Opened that way, it runs full-screen, works offline, and its storage is kept.
+## Bringing in your runs
 
-## Updating
+- **Whole Strava history:** strava.com → Settings → My Account → Download or Delete Your Account → Request your archive. Import the zip Strava emails you as it is; Krok reads `activities.csv` and every activity file inside it.
+- **Single activities:** GPX, TCX or FIT files (also `.gz`) from Strava or COROS Training Hub.
+- Importing the same runs again never duplicates them; it adds detailed data to runs that only had a summary.
+- Runs on a day with a planned session are logged against it automatically.
 
-When you get new files, upload them the same way (drag them onto the repository, overwrite, commit). The app notices the new version the next time you open it and shows a **Reload** bar.
+## What Krok works out
 
-## Your data
+| Number | How |
+| --- | --- |
+| Training load | Banister TRIMP from heart rate (time weighted more steeply near max) |
+| Fitness / fatigue | 42-day and 7-day exponentially weighted averages of daily load; their ratio is comparable with COROS's Intensity Trend |
+| VDOT, pace zones, race predictions | Daniels & Gilbert formulas from your best effort of the last 4 months (sea-level runs) |
+| Max HR | Highest 15-second average in the last 12 months |
+| Threshold HR | Middle of: 90% of max HR, HR at threshold pace from steady km splits, highest 20-minute HR at threshold pace or faster |
+| HR zones | % of threshold HR: <85, 85–89, 90–94, 95–99, 100+ |
+| Aerobic efficiency | Pace converted to a fixed heart rate (80% of threshold HR) via heart-rate reserve and the oxygen cost of running; 4-week median |
+| Pace discipline | Easy runs: share of time faster than easy pace or above Z2. Workouts: average pace of the fast parts against the target in the session's title |
 
-- Logged runs, imports and settings live in the app's storage on the phone.
-- **Settings → Export backup** saves a `.json` file you can keep in iCloud Drive. **Restore a backup** brings it back, also on a new phone.
-- Deleting the Home Screen icon deletes the app's data, so export a backup first.
-
-## Importing runs
-
-- **Whole Strava history:** strava.com → Settings → My Account → Download or Delete Your Account → Request your archive. Unzip the archive in the Files app and import `activities.csv`.
-- **Single activities:** GPX, TCX or FIT files (also `.gz`) exported from Strava or COROS Training Hub.
-- Runs that fall on a day with a planned session are logged against it automatically. Importing the same run twice is detected and skipped.
+Runs above 1,200 m altitude count for load but are left out of fitness estimates.
 
 ## Files
 
 | Path | What it is |
 | --- | --- |
-| `index.html` | App shell |
-| `app.css` | Styles |
+| `index.html`, `app.css` | App shell and styles |
 | `app.js` | Screens and logic |
-| `plan.js` | Default training plan and pace zones |
-| `guide.js` | Session-type explanations |
-| `importers.js`, `fit.js` | File import (GPX, TCX, FIT, Strava CSV) |
-| `db.js` | On-device storage |
+| `analysis.js` | All calculations |
+| `charts.js` | SVG charts |
+| `streams.js` | Second-by-second data → compact per-run metrics |
+| `importers.js`, `fit.js` | Strava zip, CSV, FIT, GPX, TCX import |
+| `plan.js`, `guide.js` | Default training plan and session-type explanations |
+| `db.js` | On-device storage (IndexedDB) |
 | `sw.js` | Offline support. Change `VERSION` whenever a file changes. |
 | `manifest.webmanifest`, `*.png` | Home Screen name and icons |

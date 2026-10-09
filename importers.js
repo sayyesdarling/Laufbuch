@@ -1,23 +1,19 @@
 // Turns exported files into activity records.
-// Supported: .gpx, .tcx, .fit (each optionally .gz), and Strava's bulk-export activities.csv.
+// Supported: Strava's archive .zip (read directly), activities.csv, and .gpx / .tcx / .fit
+// files (each optionally .gz). Files with second-by-second data also get detailed metrics.
 
 import { parseFIT } from "./fit.js";
+import { processStream, distFromLatLon } from "./streams.js";
 
 export function localISO(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
-function isRunName(s) { return /run|lauf|jog|carrera|correr/i.test(s || ""); }
-
-function haversine(a, b) {
-  const R = 6371000, toR = x => x * Math.PI / 180;
-  const dLat = toR(b.lat - a.lat), dLon = toR(b.lon - a.lon);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
+const isRunName = s => /run|lauf|jog|carrera|correr/i.test(s || "");
+export const baseName = n => String(n || "").split(/[\\/]/).pop();
+export const fileKey = n => baseName(n).toLowerCase().replace(/\.gz$/, "");
 
 function climb(eles) {
-  // Sum of rises, ignoring wobble under 2 m.
   let gain = 0, ref = null;
   for (const e of eles) {
     if (e == null || isNaN(e)) continue;
@@ -41,46 +37,42 @@ export function parseGPX(text) {
   const trk = tag(text, "trk") || text;
   const name = decodeXml(tag(trk, "name") || "");
   const type = decodeXml(tag(trk, "type") || "");
-  const pts = [];
+  const lat = [], lon = [], tt = [], ele = [], hr = [];
   const re = /<trkpt\b([^>]*)>([\s\S]*?)<\/trkpt>/g;
   let m;
   while ((m = re.exec(text))) {
-    const lat = parseFloat((m[1].match(/lat="([^"]+)"/) || [])[1]);
-    const lon = parseFloat((m[1].match(/lon="([^"]+)"/) || [])[1]);
     const time = tag(m[2], "time");
-    const ele = tag(m[2], "ele");
-    const hr = tag(m[2], "hr");
-    pts.push({ lat, lon, t: time ? Date.parse(time) : null, ele: ele != null ? parseFloat(ele) : null, hr: hr != null ? parseInt(hr, 10) : null });
+    const t = time ? Date.parse(time) : NaN;
+    if (isNaN(t)) continue;
+    lat.push(parseFloat((m[1].match(/lat="([^"]+)"/) || [])[1]));
+    lon.push(parseFloat((m[1].match(/lon="([^"]+)"/) || [])[1]));
+    tt.push(t);
+    const e = tag(m[2], "ele"); ele.push(e != null ? parseFloat(e) : null);
+    const h = tag(m[2], "hr"); hr.push(h != null ? parseInt(h, 10) : null);
   }
-  if (!pts.length) throw new Error("No track points found");
-  let dist = 0, moving = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i];
-    if (isNaN(a.lat) || isNaN(b.lat)) continue;
-    const d = haversine(a, b);
-    dist += d;
-    if (a.t != null && b.t != null) {
-      const dt = (b.t - a.t) / 1000;
-      if (dt > 0 && dt < 60 && d / dt > 0.8) moving += dt;
-    }
+  if (tt.length < 2) throw new Error("No timed track points found");
+  const d = distFromLatLon(lat, lon);
+  const t0 = tt[0];
+  const stream = { t: tt.map(x => (x - t0) / 1000), d, hr: hr.some(x => x != null) ? hr : null, alt: ele.some(x => x != null) ? ele : null };
+  let moving = 0;
+  for (let i = 1; i < tt.length; i++) {
+    const dt = (tt[i] - tt[i - 1]) / 1000;
+    if (dt > 0 && dt < 60 && (d[i] - d[i - 1]) / dt > 0.8) moving += dt;
   }
-  const times = pts.map(p => p.t).filter(t => t != null);
-  const hrs = pts.map(p => p.hr).filter(h => h != null && h > 0);
-  const startTime = times.length ? new Date(times[0]) : null;
-  const metaTime = tag(text, "time");
-  const start = startTime || (metaTime ? new Date(metaTime) : null);
+  const hrs = hr.filter(h => h != null && h > 0);
   const run = isRunName(type) || (!type && isRunName(name));
   return {
-    start,
+    start: new Date(t0),
     name,
     sport: run ? "Run" : /bik|cycl|ride/i.test(type) ? "Ride" : type ? type.replace(/^\w/, c => c.toUpperCase()) : "Activity",
     isRun: run,
-    distanceM: dist,
-    elapsedSec: times.length > 1 ? (times[times.length - 1] - times[0]) / 1000 : 0,
+    distanceM: d[d.length - 1],
+    elapsedSec: (tt[tt.length - 1] - t0) / 1000,
     movingSec: moving,
     avgHr: hrs.length ? Math.round(hrs.reduce((x, y) => x + y, 0) / hrs.length) : null,
     maxHr: hrs.length ? Math.max(...hrs) : null,
-    elevGain: climb(pts.map(p => p.ele))
+    elevGain: climb(ele),
+    stream
   };
 }
 
@@ -104,30 +96,38 @@ export function parseTCX(text) {
     });
   }
   if (!laps.length) throw new Error("No laps found");
-  const eles = [];
-  const reAlt = /<AltitudeMeters>([^<]+)<\/AltitudeMeters>/g;
-  while ((m = reAlt.exec(text))) eles.push(parseFloat(m[1]));
-  const times = [];
-  const reT = /<Time>([^<]+)<\/Time>/g;
-  while ((m = reT.exec(text))) times.push(Date.parse(m[1]));
+  const tt = [], d = [], hr = [], ele = [];
+  const reP = /<Trackpoint>([\s\S]*?)<\/Trackpoint>/g;
+  while ((m = reP.exec(text))) {
+    const time = tag(m[1], "Time");
+    const t = time ? Date.parse(time) : NaN;
+    if (isNaN(t)) continue;
+    tt.push(t);
+    const dm = tag(m[1], "DistanceMeters"); d.push(dm != null ? parseFloat(dm) : null);
+    const hb = tag(m[1], "HeartRateBpm"); hr.push(hb ? parseInt(tag(hb, "Value"), 10) : null);
+    const al = tag(m[1], "AltitudeMeters"); ele.push(al != null ? parseFloat(al) : null);
+  }
+  const t0 = tt.length ? tt[0] : null;
+  const stream = tt.length > 30 && d.some(x => x != null) ? { t: tt.map(x => (x - t0) / 1000), d, hr: hr.some(x => x != null) ? hr : null, alt: ele.some(x => x != null) ? ele : null } : null;
   const totalTime = laps.reduce((a, l) => a + l.time, 0);
   const hrLaps = laps.filter(l => l.avgHr);
   const notes = tag(text, "Notes");
   return {
-    start: laps[0].start,
+    start: laps[0].start || (t0 ? new Date(t0) : null),
     name: notes ? decodeXml(notes).slice(0, 80) : "",
     sport: sport === "Running" ? "Run" : sport === "Biking" ? "Ride" : sport,
     isRun: /running/i.test(sport),
     distanceM: laps.reduce((a, l) => a + l.dist, 0),
-    elapsedSec: times.length > 1 ? Math.max(totalTime, (times[times.length - 1] - times[0]) / 1000) : totalTime,
+    elapsedSec: tt.length > 1 ? Math.max(totalTime, (tt[tt.length - 1] - t0) / 1000) : totalTime,
     movingSec: totalTime,
     avgHr: hrLaps.length ? Math.round(hrLaps.reduce((a, l) => a + l.avgHr * l.time, 0) / hrLaps.reduce((a, l) => a + l.time, 0)) : null,
     maxHr: laps.reduce((x, l) => l.maxHr ? Math.max(x || 0, l.maxHr) : x, null),
-    elevGain: eles.length ? climb(eles) : null
+    elevGain: ele.length ? climb(ele) : null,
+    stream
   };
 }
 
-// ---- Strava bulk export: activities.csv ----
+// ---- Strava archive: activities.csv ----
 
 function parseCSV(text) {
   const rows = [];
@@ -172,7 +172,6 @@ export function parseStravaDate(s) {
   if (mo == null) return null;
   let hour = +h;
   if (ap) { ap = ap.toUpperCase(); if (ap === "PM" && hour < 12) hour += 12; if (ap === "AM" && hour === 12) hour = 0; }
-  // Strava writes these dates in UTC.
   return new Date(Date.UTC(+year, mo, +day, hour, +mi, +(se || 0)));
 }
 
@@ -193,6 +192,7 @@ export function parseStravaCSV(text) {
   if (iId == null || iDate == null) throw new Error("This doesn't look like Strava's activities.csv");
   const iElapsed = idx("Elapsed Time"), iMoving = idx("Moving Time"), iDist = idx("Distance");
   const iAvgHr = idx("Average Heart Rate"), iMaxHr = idx("Max Heart Rate"), iElev = idx("Elevation Gain");
+  const iFile = idx("Filename")[0], iRE = idx("Relative Effort"), iHigh = idx("Elevation High")[0], iLow = idx("Elevation Low")[0];
   const out = [], skipped = [];
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
@@ -200,16 +200,18 @@ export function parseStravaCSV(text) {
     if (!id) continue;
     const start = parseStravaDate(row[iDate]);
     if (!start) { skipped.push(id); continue; }
-    // Strava's export has two Distance columns: kilometres first, metres later.
     let distM = null;
     if (iDist.length > 1 && num(row[iDist[1]]) != null) distM = num(row[iDist[1]]);
-    else if (iDist.length) { const d = num(row[iDist[0]]); distM = d == null ? null : d > 500 ? d : d * 1000; }
+    else if (iDist.length) { const dd = num(row[iDist[0]]); distM = dd == null ? null : dd > 500 ? dd : dd * 1000; }
     const elapsed = iElapsed.length ? num(row[iElapsed[0]]) : null;
     const moving = iMoving.length ? num(row[iMoving[0]]) : null;
     const type = (row[iType] || "").trim();
+    const hi = iHigh != null ? num(row[iHigh]) : null, lo = iLow != null ? num(row[iLow]) : null;
+    const re = iRE.map(i => num(row[i])).find(v => v != null);
     out.push({
       id: "strava-" + id,
-      source: "Strava export",
+      source: "Strava",
+      srcFile: iFile != null && row[iFile] ? row[iFile].trim() : null,
       start,
       name: (row[iName] || "").trim(),
       sport: type || "Activity",
@@ -219,18 +221,77 @@ export function parseStravaCSV(text) {
       movingSec: moving || elapsed || 0,
       avgHr: iAvgHr.length ? num(row[iAvgHr[0]]) : null,
       maxHr: iMaxHr.length ? num(row[iMaxHr[0]]) : null,
-      elevGain: iElev.length && num(row[iElev[0]]) != null ? Math.round(num(row[iElev[0]])) : null
+      elevGain: iElev.length && num(row[iElev[0]]) != null ? Math.round(num(row[iElev[0]])) : null,
+      alt: hi != null && lo != null ? Math.round((hi + lo) / 2) : null,
+      relEffort: re != null ? Math.round(re) : null
     });
   }
   return { activities: out, skipped };
 }
 
-// ---- Dispatcher ----
+// ---- Zip archives (read entry by entry, without loading the whole file) ----
 
-async function gunzip(buf) {
-  if (typeof DecompressionStream === "undefined") throw new Error("This device can't open .gz files. Unzip it first.");
-  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+async function inflate(buf, format) {
+  if (typeof DecompressionStream === "undefined") throw new Error("This device can't unpack compressed files. Update iOS, or unzip the files first.");
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream(format));
   return await new Response(stream).arrayBuffer();
+}
+
+const WANTED = /(^|\/)activities\.csv$|\.(fit|gpx|tcx)(\.gz)?$/i;
+
+async function zipEntries(file) {
+  const size = file.size;
+  const tailLen = Math.min(size, 65557);
+  const tail = new DataView(await file.slice(size - tailLen).arrayBuffer());
+  let eocd = -1;
+  for (let i = tailLen - 22; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error("This zip file looks damaged.");
+  const count = tail.getUint16(eocd + 10, true);
+  const cdSize = tail.getUint32(eocd + 12, true);
+  const cdOff = tail.getUint32(eocd + 16, true);
+  if (cdOff === 0xffffffff || count === 0xffff) throw new Error("This archive is too large to read directly. Unzip it, then import activities.csv and the files in the activities folder.");
+  const cd = new DataView(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
+  const dec = new TextDecoder();
+  const out = [];
+  let p = 0;
+  for (let k = 0; k < count && p + 46 <= cd.byteLength; k++) {
+    if (cd.getUint32(p, true) !== 0x02014b50) break;
+    const method = cd.getUint16(p + 10, true);
+    const csize = cd.getUint32(p + 20, true);
+    const usize = cd.getUint32(p + 24, true);
+    const nlen = cd.getUint16(p + 28, true), elen = cd.getUint16(p + 30, true), clen = cd.getUint16(p + 32, true);
+    const lho = cd.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(cd.buffer, p + 46, nlen));
+    p += 46 + nlen + elen + clen;
+    if (name.endsWith("/") || !WANTED.test(name) || /__MACOSX/.test(name)) continue;
+    out.push({
+      name, size: usize,
+      read: async () => {
+        const lh = new DataView(await file.slice(lho, lho + 30).arrayBuffer());
+        if (lh.getUint32(0, true) !== 0x04034b50) throw new Error("Damaged entry in the zip");
+        const startAt = lho + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+        const raw = await file.slice(startAt, startAt + csize).arrayBuffer();
+        if (method === 0) return raw;
+        if (method === 8) return inflate(raw, "deflate-raw");
+        throw new Error("Unsupported compression in the zip");
+      }
+    });
+  }
+  return out;
+}
+
+// Turns picked files into readable entries; zips are opened and filtered to activity data.
+export async function expandFiles(files) {
+  const entries = [], problems = [];
+  for (const f of files) {
+    if (/\.zip$/i.test(f.name)) {
+      try { (await zipEntries(f)).forEach(e => entries.push(e)); }
+      catch (e) { problems.push({ name: f.name, reason: e.message || String(e) }); }
+    } else entries.push({ name: f.name, size: f.size, read: () => f.arrayBuffer() });
+  }
+  // The activity list goes first so that files can be matched to it by name.
+  entries.sort((a, b) => (/\.csv$/i.test(b.name) ? 1 : 0) - (/\.csv$/i.test(a.name) ? 1 : 0));
+  return { entries, problems };
 }
 
 function finish(a, source, fileName) {
@@ -238,9 +299,11 @@ function finish(a, source, fileName) {
   const rec = {
     id: a.id || ("act-" + a.start.toISOString().slice(0, 16) + "-" + Math.round(a.distanceM || 0)),
     source: a.source || source,
-    file: fileName || null,
+    srcFile: a.srcFile ? fileKey(a.srcFile) : fileName ? fileKey(fileName) : null,
     start: a.start.toISOString(),
-    date: localISO(a.start),
+    // The watch's own time zone when the file has it, so runs keep their day when you travel.
+    date: a.tzOffsetSec != null ? new Date(a.start.getTime() + a.tzOffsetSec * 1000).toISOString().slice(0, 10) : localISO(a.start),
+    tz: a.tzOffsetSec != null ? a.tzOffsetSec : null,
     name: a.name || "",
     sport: a.sport || "Activity",
     isRun: !!a.isRun,
@@ -250,37 +313,47 @@ function finish(a, source, fileName) {
     avgHr: a.avgHr ? Math.round(a.avgHr) : null,
     maxHr: a.maxHr ? Math.round(a.maxHr) : null,
     elevGain: a.elevGain != null ? a.elevGain : null,
+    alt: a.alt != null ? a.alt : null,
+    relEffort: a.relEffort != null ? a.relEffort : null,
     importedAt: new Date().toISOString()
   };
-  return rec;
-}
-
-// files: array of { name, buffer: ArrayBuffer }
-export async function parseFiles(files) {
-  const activities = [], problems = [];
-  for (const f of files) {
-    let name = f.name || "file";
-    let buf = f.buffer;
-    try {
-      let lower = name.toLowerCase();
-      if (lower.endsWith(".zip")) throw new Error("Unzip the archive first (tap it in the Files app), then import activities.csv or the files inside.");
-      if (lower.endsWith(".gz")) { buf = await gunzip(buf); lower = lower.slice(0, -3); }
-      const head = new Uint8Array(buf.slice(0, 16));
-      const isFit = lower.endsWith(".fit") || (head.length >= 12 && String.fromCharCode(head[8], head[9], head[10], head[11]) === ".FIT");
-      if (isFit) { activities.push(finish(parseFIT(buf), "FIT file", name)); continue; }
-      const text = new TextDecoder("utf-8").decode(buf);
-      if (lower.endsWith(".csv")) {
-        const r = parseStravaCSV(text);
-        r.activities.forEach(a => activities.push(finish(a, "Strava export", name)));
-        if (r.skipped.length) problems.push({ name, reason: r.skipped.length + " rows had a date format the app couldn't read" });
-        continue;
-      }
-      if (lower.endsWith(".gpx") || /<gpx[\s>]/.test(text.slice(0, 2000))) { activities.push(finish(parseGPX(text), "GPX file", name)); continue; }
-      if (lower.endsWith(".tcx") || /TrainingCenterDatabase/.test(text.slice(0, 2000))) { activities.push(finish(parseTCX(text), "TCX file", name)); continue; }
-      throw new Error("Not a GPX, TCX, FIT or Strava CSV file");
-    } catch (e) {
-      problems.push({ name, reason: e.message || String(e) });
+  let small = null;
+  if (a.stream) {
+    const p = processStream(a.stream);
+    if (p) {
+      rec.m = p.metrics;
+      small = p.small;
+      if (p.metrics.altMed != null) rec.alt = p.metrics.altMed;
+      if (!rec.avgHr && p.metrics.avgHr) rec.avgHr = p.metrics.avgHr;
     }
   }
-  return { activities, problems };
+  return { rec, small };
+}
+
+// Reads one entry and returns the activities in it.
+export async function parseEntry(entry) {
+  const items = [], problems = [];
+  const name = entry.name || "file";
+  try {
+    let lower = baseName(name).toLowerCase();
+    let buf = await entry.read();
+    if (lower.endsWith(".zip")) throw new Error("Zip files inside zip files aren't supported.");
+    if (lower.endsWith(".gz")) { buf = await inflate(buf, "gzip"); lower = lower.slice(0, -3); }
+    const head = new Uint8Array(buf.slice(0, 16));
+    const isFit = lower.endsWith(".fit") || (head.length >= 12 && String.fromCharCode(head[8], head[9], head[10], head[11]) === ".FIT");
+    if (isFit) { items.push(finish(parseFIT(buf), "FIT file", name)); return { items, problems }; }
+    const text = new TextDecoder("utf-8").decode(buf);
+    if (lower.endsWith(".csv")) {
+      const r = parseStravaCSV(text);
+      r.activities.forEach(a => items.push(finish(a, "Strava", null)));
+      if (r.skipped.length) problems.push({ name, reason: r.skipped.length + " rows had a date the app couldn't read" });
+      return { items, problems };
+    }
+    if (lower.endsWith(".gpx") || /<gpx[\s>]/.test(text.slice(0, 2000))) { items.push(finish(parseGPX(text), "GPX file", name)); return { items, problems }; }
+    if (lower.endsWith(".tcx") || /TrainingCenterDatabase/.test(text.slice(0, 2000))) { items.push(finish(parseTCX(text), "TCX file", name)); return { items, problems }; }
+    throw new Error("Not a GPX, TCX, FIT or Strava CSV file");
+  } catch (e) {
+    problems.push({ name: baseName(name), reason: e.message || String(e) });
+  }
+  return { items, problems };
 }

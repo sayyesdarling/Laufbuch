@@ -74,15 +74,21 @@ export const DEFAULT_SESSIONS = [
   S("w8-sun", "2026-12-13", "recovery", "Easy recovery run", 8)
 ];
 
+// Settings you choose. Everything physiological (zones, threshold, max HR) is worked out
+// from your runs in analysis.js; these defaults only apply until there is data.
 export const DEFAULT_SETTINGS = {
-  maxHr: 210,
-  thresholdHr: 190,
-  thresholdPace: "4:00",
-  zones: [
-    { key: "easy", name: "Easy", pace: "5:00–5:35 /km", hr: "below ~165", feel: "Full sentences" },
-    { key: "steady", name: "Steady", pace: "4:25–4:40 /km", hr: "165–178", feel: "Short sentences" },
-    { key: "threshold", name: "Threshold", pace: "3:58–4:08 /km", hr: "182–190", feel: "Comfortably hard; a few words" },
-    { key: "interval", name: "Interval", pace: "3:38–3:45 /km", hr: "195+ late in each rep", feel: "Hard; 3–5 km race effort" },
-    { key: "reps", name: "Reps", pace: "200 m 40–42 s · 400 m 82–86 s", hr: "ignore", feel: "Fast but relaxed; full recovery" }
-  ]
+  theme: "system",
+  restHr: 45,
+  maxHrOverride: "",
+  lthrOverride: "",
+  coros: {}
+};
+
+// Used by the guide only while there aren't enough runs to compute your own paces.
+export const FALLBACK_ZONES = {
+  easy: { pace: "5:00–5:35 /km", hr: "below ~165" },
+  steady: { pace: "4:25–4:40 /km", hr: "165–178" },
+  threshold: { pace: "3:58–4:08 /km", hr: "182–190" },
+  interval: { pace: "3:38–3:45 /km", hr: "195+ late in each rep" },
+  reps: { pace: "200 m 40–42 s · 400 m 82–86 s", hr: "ignore" }
 };

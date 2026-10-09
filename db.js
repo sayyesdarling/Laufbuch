@@ -1,8 +1,9 @@
 // Small promise wrapper around IndexedDB.
-// Stores: sessions (planned runs + what you logged), activities (imported runs), kv (settings, plan block, flags).
+// Stores: sessions (planned runs + what you logged), activities (imported runs and their metrics),
+// streams (second-by-second data, thinned to 5 s, for per-run charts), kv (settings, plan block, flags).
 
-const DB_NAME = "laufbuch";
-const DB_VERSION = 1;
+const DB_NAME = "laufbuch"; // kept from the first version so existing data stays
+const DB_VERSION = 2;
 let dbp = null;
 
 export function openDB() {
@@ -14,6 +15,7 @@ export function openDB() {
       if (!db.objectStoreNames.contains("sessions")) db.createObjectStore("sessions", { keyPath: "id" }).createIndex("date", "date");
       if (!db.objectStoreNames.contains("activities")) db.createObjectStore("activities", { keyPath: "id" }).createIndex("date", "date");
       if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("streams")) db.createObjectStore("streams", { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

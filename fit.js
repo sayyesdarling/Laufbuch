@@ -1,6 +1,6 @@
-// Minimal FIT decoder: reads the session summary (message 18) and, as a fallback,
-// the per-second records (message 20). Enough to log a run: start, sport, distance,
-// time, heart rate, ascent. Handles compressed timestamps and developer fields.
+// Minimal FIT decoder: reads the session summary (message 18) and the per-second
+// records (message 20): time, distance, heart rate, altitude. Handles compressed
+// timestamps and developer fields.
 
 const FIT_EPOCH = 631065600; // seconds between 1970-01-01 and 1989-12-31 UTC
 
@@ -8,7 +8,6 @@ const SPORTS = { 0: "Other", 1: "Run", 2: "Ride", 4: "Fitness", 5: "Swim", 10: "
 
 function readVal(dv, off, size, little, baseType) {
   const bt = baseType & 0x1f;
-  // Only unsigned integer types are needed for the fields we use.
   let v;
   if (size === 1) v = dv.getUint8(off);
   else if (size === 2) v = dv.getUint16(off, little);
@@ -31,8 +30,8 @@ export function parseFIT(buffer) {
   const defs = {};
   let lastTs = 0;
   const sessions = [];
-  const records = [];
-  let sportFromSport = null;
+  const recT = [], recD = [], recHr = [], recAlt = [];
+  let sportFromSport = null, tzOffsetSec = null;
 
   while (off < end) {
     const hdr = dv.getUint8(off); off += 1;
@@ -50,15 +49,12 @@ export function parseFIT(buffer) {
     }
 
     if (isDef) {
-      off += 1; // reserved
+      off += 1;
       const little = dv.getUint8(off) === 0; off += 1;
       const global = dv.getUint16(off, little); off += 2;
       const n = dv.getUint8(off); off += 1;
       const fields = [];
-      for (let i = 0; i < n; i++) {
-        fields.push({ num: dv.getUint8(off), size: dv.getUint8(off + 1), type: dv.getUint8(off + 2) });
-        off += 3;
-      }
+      for (let i = 0; i < n; i++) { fields.push({ num: dv.getUint8(off), size: dv.getUint8(off + 1), type: dv.getUint8(off + 2) }); off += 3; }
       let devSize = 0;
       if (hasDev) {
         const nd = dv.getUint8(off); off += 1;
@@ -70,29 +66,49 @@ export function parseFIT(buffer) {
 
     const def = defs[local];
     if (!def) throw new Error("Unexpected data in FIT file");
-    const msg = {};
+    const g = def.global;
+    const want = g === 18 || g === 20 || g === 12 || g === 34;
+    const msg = want ? {} : null;
     for (const f of def.fields) {
       if (off + f.size > dv.byteLength) break;
-      msg[f.num] = readVal(dv, off, f.size, def.little, f.type);
+      if (want || f.num === 253) {
+        const v = readVal(dv, off, f.size, def.little, f.type);
+        if (want) msg[f.num] = v;
+        if (f.num === 253 && v != null) lastTs = v;
+      }
       off += f.size;
     }
     off += def.devSize;
-    if (msg[253] != null) lastTs = msg[253];
+    if (!want) continue;
     if (compressedTs != null && msg[253] == null) msg[253] = compressedTs;
 
-    if (def.global === 18) sessions.push(msg);
-    else if (def.global === 20) records.push(msg);
-    else if (def.global === 12 && msg[0] != null) sportFromSport = msg[0];
+    if (g === 18) sessions.push(msg);
+    else if (g === 12 && msg[0] != null) sportFromSport = msg[0];
+    else if (g === 34 && msg[5] != null && msg[253] != null && Math.abs(msg[5] - msg[253]) <= 14 * 3600) tzOffsetSec = msg[5] - msg[253];
+    else if (g === 20 && msg[253] != null) {
+      recT.push(msg[253]);
+      recD.push(msg[5] != null ? msg[5] / 100 : null);
+      recHr.push(msg[3] != null && msg[3] > 0 ? msg[3] : null);
+      const alt = msg[78] != null ? msg[78] / 5 - 500 : msg[2] != null ? msg[2] / 5 - 500 : null;
+      recAlt.push(alt);
+    }
   }
 
+  const t0 = recT.length ? recT[0] : null;
+  const stream = recT.length > 10 ? {
+    t: recT.map(x => x - t0),
+    d: recD,
+    hr: recHr.some(x => x != null) ? recHr : null,
+    alt: recAlt.some(x => x != null) ? recAlt : null
+  } : null;
+
   if (sessions.length) {
-    // Multisport files can have several sessions; add them up.
     const first = sessions[0];
     const sum = (k, scale) => sessions.reduce((a, s) => a + (s[k] != null ? s[k] / scale : 0), 0);
     const hrs = sessions.filter(s => s[16] != null);
     const avgHr = hrs.length ? Math.round(hrs.reduce((a, s) => a + s[16] * (s[8] || 1), 0) / hrs.reduce((a, s) => a + (s[8] || 1), 0)) : null;
     const maxHr = sessions.reduce((m, s) => s[17] != null ? Math.max(m || 0, s[17]) : m, null);
-    const startSec = first[2] != null ? first[2] : (records[0] && records[0][253]);
+    const startSec = first[2] != null ? first[2] : t0;
     const sport = first[5] != null ? first[5] : sportFromSport;
     return {
       start: startSec != null ? new Date((startSec + FIT_EPOCH) * 1000) : null,
@@ -101,27 +117,27 @@ export function parseFIT(buffer) {
       distanceM: sum(9, 100),
       elapsedSec: sum(7, 1000),
       movingSec: sum(8, 1000) || sum(7, 1000),
-      avgHr,
-      maxHr,
-      elevGain: sessions.some(s => s[22] != null) ? Math.round(sum(22, 1)) : null
+      avgHr, maxHr,
+      elevGain: sessions.some(s => s[22] != null) ? Math.round(sum(22, 1)) : null,
+      tzOffsetSec,
+      stream
     };
   }
 
-  // No session message: build a summary from the records.
-  const recs = records.filter(r => r[253] != null);
-  if (!recs.length) throw new Error("No activity data found in this FIT file");
-  const t0 = recs[0][253], t1 = recs[recs.length - 1][253];
-  const dists = recs.map(r => r[5]).filter(v => v != null);
-  const hrs = recs.map(r => r[3]).filter(v => v != null && v > 0);
+  if (!recT.length) throw new Error("No activity data found in this FIT file");
+  const dists = recD.filter(v => v != null);
+  const hrs = recHr.filter(v => v != null);
   return {
     start: new Date((t0 + FIT_EPOCH) * 1000),
     sport: SPORTS[sportFromSport] || "Other",
     isRun: sportFromSport === 1,
-    distanceM: dists.length ? dists[dists.length - 1] / 100 : 0,
-    elapsedSec: t1 - t0,
-    movingSec: t1 - t0,
+    distanceM: dists.length ? dists[dists.length - 1] : 0,
+    elapsedSec: recT[recT.length - 1] - t0,
+    movingSec: recT[recT.length - 1] - t0,
     avgHr: hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null,
     maxHr: hrs.length ? Math.max(...hrs) : null,
-    elevGain: null
+    elevGain: null,
+    tzOffsetSec,
+    stream
   };
 }

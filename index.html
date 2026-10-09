@@ -3,33 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Laufbuch</title>
-<meta name="description" content="Training plan, run log and session guide.">
+<title>Krok</title>
+<meta name="description" content="Training plan, run log, analysis and session guide.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Laufbuch">
-<meta name="theme-color" content="#F2F4F7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Krok">
+<meta name="theme-color" content="#060914" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EEF2FA" media="(prefers-color-scheme: light)">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="./app.css">
 </head>
 <body>
+<div class="backdrop" aria-hidden="true"></div>
 <div class="update" id="updateBar" hidden>
-  <span>A new version of Laufbuch is ready.</span>
+  <span>A new version of Krok is ready.</span>
   <button type="button" data-act="update-app">Reload</button>
 </div>
 <main class="wrap" id="view" tabindex="-1">
   <p class="loading">Loading…</p>
 </main>
 <nav class="tabbar" aria-label="Sections">
-  <a href="#plan" data-view="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4M7.5 13.5h3M7.5 17h6"/></svg><span>Plan</span></a>
-  <a href="#runs" data-view="runs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V11M10 19V5M16 19v-6M22 19H2"/></svg><span>Runs</span></a>
+  <a href="#plan" data-view="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4M7.5 13.5h3M7.5 17h6"/></svg><span>Plan</span></a>
+  <a href="#runs" data-view="runs"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="4.5" r="1.8"/><path d="M8 21l3.2-5.6 3 2.3V22M6.5 11.5 9.8 8l3.5 1.2 2.4 3.3 3.3 1M11.2 15.4l1.6-5.6"/></svg><span>Runs</span></a>
+  <a href="#stats" data-view="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5h4l2.5-6 4 12 3-8 1.5 2h4"/></svg><span>Stats</span></a>
   <a href="#guide" data-view="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg><span>Guide</span></a>
   <a href="#settings" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>Settings</span></a>
 </nav>
@@ -43,7 +45,7 @@
 <div class="toast" id="toast" role="status" hidden></div>
 <input type="file" id="importInput" multiple hidden>
 <input type="file" id="backupInput" accept=".json,application/json" hidden>
-<noscript><p style="padding:16px">Laufbuch needs JavaScript.</p></noscript>
+<noscript><p style="padding:16px">Krok needs JavaScript.</p></noscript>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
