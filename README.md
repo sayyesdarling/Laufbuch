@@ -10,7 +10,7 @@ Everything is stored on the phone. Nothing is sent anywhere.
 2. Tap **Share** → **Add to Home Screen** → **Add**.
 3. Open Krok from the Home Screen icon from now on. Opened that way it runs full-screen, works offline, and its storage is kept.
 
-If you added an earlier version, delete that icon and add it again to get the new name and icon.
+If you added an earlier version, it updates itself (tap **Reload** when it offers the new version). The Home Screen name and icon only change if you add it again, and a newly added app starts with empty storage, so first export a backup in Settings, then delete the old icon, add it again, restore the backup and re-import the Strava zip for the per-run charts.
 
 ## Bringing in your runs
 
