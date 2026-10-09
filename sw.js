@@ -1,21 +1,21 @@
 // Offline support: the app shell is cached on install; fonts are cached the first time they load.
 // Bump VERSION whenever any file changes so phones pick up the new version.
-const VERSION = "laufbuch-v1.0.0";
+const VERSION = "laufbuch-v1.0.1";
 const FONT_CACHE = "laufbuch-fonts";
 const SHELL = [
   "./",
   "./index.html",
-  "./css/app.css",
-  "./js/app.js",
-  "./js/db.js",
-  "./js/plan.js",
-  "./js/guide.js",
-  "./js/importers.js",
-  "./js/fit.js",
+  "./app.css",
+  "./app.js",
+  "./db.js",
+  "./plan.js",
+  "./guide.js",
+  "./importers.js",
+  "./fit.js",
   "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icon-192.png",
+  "./icon-512.png",
+  "./apple-touch-icon.png"
 ];
 
 self.addEventListener("install", event => {

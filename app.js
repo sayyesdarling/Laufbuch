@@ -3,7 +3,7 @@ import { DEFAULT_BLOCK, DEFAULT_SESSIONS, DEFAULT_SETTINGS } from "./plan.js";
 import { TYPES, TYPE_ORDER, COMPARE } from "./guide.js";
 import { parseFiles, localISO } from "./importers.js";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const S = { sessions: [], acts: [], settings: null, block: null, view: "plan", histFilter: "runs", ready: false };
 
 /* ---------------- helpers ---------------- */
